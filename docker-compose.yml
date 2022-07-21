@@ -1,0 +1,63 @@
+version: '3.7'
+services:
+  ireg_server:
+    build: .
+    restart: always
+    command: sh -c 'python manage.py migrate --no-input;
+                    python manage.py collectstatic --no-input --clear;
+                    gunicorn core.wsgi:application --bind 0.0.0.0:8000 --reload'
+    volumes:
+      - ./server:/home/app/server
+      - static_volume:/home/app/static
+      - uploads_volume:/home/app/uploads
+    expose:
+      - 8000
+    env_file:
+      - ./.env
+    depends_on:
+      - ireg_db
+
+  ireg_celery:
+    build: .
+    restart: always
+    command: sh -c 'celery -A core.celery worker -E -l DEBUG --concurrency=1 &&
+                    celery -A core.celery beat -l DEBUG'
+    volumes:
+      - static_volume:/home/app/static
+      - uploads_volume:/home/app/uploads
+    env_file:
+      - ./.env
+    depends_on:
+      - ireg_server
+      - ireg_rabbitmq
+
+  ireg_db:
+    image: postgres:14.2-alpine
+    restart: always
+    env_file:
+      - ./.env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    ports:
+      - "5432:5432"
+
+  ireg_nginx:
+    build: ./nginx
+    volumes:
+      - static_volume:/home/app/static
+      - uploads_volume:/home/app/uploads
+    ports:
+      - "80:80"
+    depends_on:
+      - ireg_server
+
+  ireg_rabbitmq:
+    image: rabbitmq:3.10-alpine
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+volumes:
+  static_volume:
+  uploads_volume:
+  postgres_data:
+  rabbitmq_data:
